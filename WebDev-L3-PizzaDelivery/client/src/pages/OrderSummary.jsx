@@ -1,637 +1,348 @@
-import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import confetti from "canvas-confetti";
-import { useCart } from "../context/CartContext";
-import { useAuth } from "../context/AuthContext";
-import api from "../services/api";
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
 import {
+  ShoppingBag,
   Trash2,
   Plus,
   Minus,
-  CreditCard,
-  ShieldCheck,
-  MapPin,
-  Phone,
-  User,
-  ShoppingBag,
   ArrowRight,
-  AlertCircle,
-} from "lucide-react";
+  Sparkles,
+  Tag,
+  ShieldCheck,
+  ChevronLeft,
+  Pizza,
+  CheckCircle2
+} from 'lucide-react';
 
-const OrderSummary = () => {
+export default function OrderSummary() {
+  const {
+    cart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    cartSubtotal,
+    deliveryFee,
+    gstTax,
+    coupon,
+    setCoupon,
+    discountAmount,
+    cartTotal,
+    showToast,
+    user
+  } = useApp();
+
   const navigate = useNavigate();
-  const { cart, removeFromCart, updateQuantity, clearCart, getSubtotal } =
-    useCart();
-  const { user, isAuthenticated } = useAuth();
+  const [couponInput, setCouponInput] = useState('');
+  const [couponError, setCouponError] = useState('');
 
-  const [address, setAddress] = useState({
-    fullName: user?.name || "",
-    street: "",
-    city: "",
-    state: "",
-    zipCode: "",
-    phone: "",
-  });
+  const handleApplyCoupon = (e) => {
+    e.preventDefault();
+    const cleanCode = couponInput.trim().toUpperCase();
 
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const subtotal = getSubtotal();
-  const deliveryFee = subtotal > 500 || subtotal === 0 ? 0 : 40;
-  const totalAmount = subtotal + deliveryFee;
-
-  const handleInputChange = (e) => {
-    setAddress({ ...address, [e.target.name]: e.target.value });
+    if (cleanCode === 'OASIS50') {
+      setCoupon('OASIS50');
+      setCouponError('');
+      showToast('OASIS50 applied: Flat ₹50 discount!', 'success');
+    } else if (cleanCode === 'SLICECRAFT20') {
+      setCoupon('SLICECRAFT20');
+      setCouponError('');
+      showToast('SLICECRAFT20 applied: 20% off!', 'success');
+    } else {
+      setCouponError('Invalid coupon code. Try OASIS50 or SLICECRAFT20');
+    }
   };
 
-  const handleRazorpayPayment = async (e) => {
-    e.preventDefault();
-    setErrorMsg("");
-
-    if (!isAuthenticated) {
-      navigate("/login", { state: { from: { pathname: "/order-summary" } } });
-      return;
-    }
-
-    if (
-      !address.street ||
-      !address.city ||
-      !address.phone ||
-      !address.zipCode
-    ) {
-      setErrorMsg("Please complete all delivery address and phone fields.");
-      return;
-    }
-
-    if (cart.length === 0) {
-      setErrorMsg("Your cart is empty. Add a delicious pizza first!");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const res = await api.post("/orders/create-razorpay-order", {
-        items: cart,
-        deliveryAddress: address,
-      });
-
-      if (!res.data.success) {
-        throw new Error(res.data.message || "Failed to initialize payment.");
-      }
-
-      const { razorpayOrder, keyId } = res.data;
-
-      const options = {
-        key: keyId,
-        amount: razorpayOrder.amount,
-        currency: razorpayOrder.currency,
-        name: "SliceCraft Artisan Pizza",
-        description: `Order Payment (${cart.length} item${cart.length > 1 ? "s" : ""})`,
-        order_id: razorpayOrder.id,
-        image:
-          "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=200&q=80",
-        prefill: {
-          name: address.fullName || user.name,
-          email: user.email,
-          contact: address.phone,
-        },
-        theme: {
-          color: "#ff5e28",
-        },
-        handler: async (response) => {
-          try {
-            const verifyRes = await api.post("/orders/verify-payment", {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              items: cart,
-              deliveryAddress: address,
-              totalAmount,
-            });
-
-            if (verifyRes.data.success) {
-              confetti({
-                particleCount: 100,
-                spread: 70,
-                origin: { y: 0.6 },
-              });
-
-              clearCart();
-              navigate("/dashboard", {
-                state: { newOrderId: verifyRes.data.order._id },
-              });
-            }
-          } catch (verifyErr) {
-            setErrorMsg(
-              verifyErr.response?.data?.message ||
-                "Payment verification failed on server.",
-            );
-            setLoading(false);
-          }
-        },
-        modal: {
-          ondismiss: () => {
-            setLoading(false);
-          },
-        },
-      };
-
-      if (window.Razorpay) {
-        const rzp = new window.Razorpay(options);
-        rzp.on("payment.failed", (failResp) => {
-          setErrorMsg(
-            failResp.error?.description || "Payment was declined or cancelled.",
-          );
-          setLoading(false);
-        });
-        rzp.open();
-      } else {
-        const confirmSim = window.confirm(
-          "Razorpay Checkout script could not be reached (AdBlocker or offline). Proceed with Test Mode Simulated Payment?",
-        );
-        if (confirmSim) {
-          const verifyRes = await api.post("/orders/verify-payment", {
-            razorpay_order_id: razorpayOrder.id,
-            razorpay_payment_id: `pay_mock_${Date.now()}`,
-            razorpay_signature: "simulated_test_signature",
-            items: cart,
-            deliveryAddress: address,
-            totalAmount,
-          });
-          if (verifyRes.data.success) {
-            clearCart();
-            navigate("/dashboard");
-          }
-        }
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error("Order checkout error:", err);
-      setErrorMsg(
-        err.response?.data?.message || err.message || "Checkout failed.",
-      );
-      setLoading(false);
-    }
+  const handleRemoveCoupon = () => {
+    setCoupon(null);
+    setCouponInput('');
+    setCouponError('');
+    showToast('Coupon removed.', 'info');
   };
 
   if (cart.length === 0) {
     return (
-      <div
-        className="container"
-        style={{ textAlign: "center", padding: "6rem 1.5rem" }}
-      >
-        <div
-          style={{
-            width: "80px",
-            height: "80px",
-            borderRadius: "50%",
-            background: "rgba(255, 255, 255, 0.05)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            margin: "0 auto 1.5rem auto",
-          }}
-        >
-          <ShoppingBag size={36} color="var(--text-dim)" />
-        </div>
-        <h2 style={{ fontSize: "2rem", marginBottom: "0.8rem" }}>
-          Your Basket is Empty
-        </h2>
-        <p
-          style={{
-            color: "var(--text-muted)",
-            marginBottom: "2rem",
-            maxWidth: "450px",
-            margin: "0 auto 2rem auto",
-          }}
-        >
-          Explore our artisan signature recipes or craft a custom pizza from
-          scratch.
-        </p>
-        <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
-          <Link to="/" className="btn-secondary">
-            View Menu
-          </Link>
-          <Link to="/custom-builder" className="btn-primary">
-            Custom Pizza Studio
-          </Link>
+      <div className="min-h-[75vh] flex items-center justify-center px-4 py-16">
+        <div className="text-center max-w-md p-8 rounded-3xl glass-panel border border-stone-800 shadow-2xl">
+          <div className="w-20 h-20 rounded-full bg-stone-900 border border-stone-800 flex items-center justify-center mx-auto mb-5 text-stone-600">
+            <ShoppingBag className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-black text-white font-display">Your Cart is Empty</h2>
+          <p className="text-sm text-stone-400 mt-2 leading-relaxed">
+            Looks like you haven't added any wood-fired artisan pies yet. Explore our handcrafted menu or build your own!
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              to="/"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-stone-950 font-bold text-sm shadow-lg shadow-orange-500/20 transition-all"
+            >
+              Browse Artisan Menu
+            </Link>
+            <Link
+              to="/custom-pizza"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl glass-panel hover:bg-stone-800 text-stone-300 font-semibold text-sm transition-all"
+            >
+              Custom Pizza Studio
+            </Link>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container" style={{ padding: "3rem 1.5rem" }}>
-      <h1 style={{ fontSize: "2.4rem", marginBottom: "0.5rem" }}>
-        Order Review & Checkout
-      </h1>
-      <p style={{ color: "var(--text-muted)", marginBottom: "2.5rem" }}>
-        Confirm delivery coordinates and complete secure payment with Razorpay.
-      </p>
-
-      {errorMsg && (
-        <div
-          style={{
-            background: "rgba(239, 68, 68, 0.15)",
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            color: "#f87171",
-            padding: "1rem 1.25rem",
-            borderRadius: "8px",
-            marginBottom: "2rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <AlertCircle size={20} />
-          <span>{errorMsg}</span>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.2fr 0.8fr",
-          gap: "2.5rem",
-          alignItems: "start",
-        }}
-      >
+    <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-stone-800">
         <div>
-          <div
-            className="glass-panel"
-            style={{ padding: "1.75rem", marginBottom: "2rem" }}
-          >
-            <h3
-              style={{
-                fontSize: "1.25rem",
-                marginBottom: "1.5rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <ShoppingBag size={20} color="var(--accent-orange)" />
-              Items in Your Order ({cart.length})
-            </h3>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "1.2rem",
-              }}
-            >
-              {cart.map((item) => (
-                <div
-                  key={item.cartId}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    paddingBottom: "1.2rem",
-                    borderBottom: "1px solid var(--border-glass)",
-                  }}
-                >
-                  <div style={{ flexGrow: 1, paddingRight: "1rem" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <h4 style={{ fontSize: "1.05rem" }}>{item.name}</h4>
-                      <span
-                        className={`badge ${item.pizzaType === "custom" ? "badge-orange" : "badge-amber"}`}
-                        style={{ fontSize: "0.65rem" }}
-                      >
-                        {item.pizzaType}
-                      </span>
-                    </div>
-
-                    {item.pizzaType === "custom" && item.customDetails && (
-                      <p
-                        style={{
-                          fontSize: "0.82rem",
-                          color: "var(--text-muted)",
-                          marginTop: "4px",
-                        }}
-                      >
-                        Sauce: {item.customDetails.sauce?.name} | Cheese:{" "}
-                        {item.customDetails.cheese?.name}
-                        {item.customDetails.vegetables?.length > 0 &&
-                          ` | Veggies: ${item.customDetails.vegetables.map((v) => v.name).join(", ")}`}
-                      </p>
-                    )}
-                    <div
-                      style={{
-                        fontSize: "0.95rem",
-                        fontWeight: 700,
-                        color: "var(--accent-orange)",
-                        marginTop: "4px",
-                      }}
-                    >
-                      ₹{item.price} each
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        background: "rgba(255, 255, 255, 0.05)",
-                        borderRadius: "6px",
-                        border: "1px solid var(--border-glass)",
-                      }}
-                    >
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.cartId, item.quantity - 1)
-                        }
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--text-muted)",
-                          padding: "6px 10px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span
-                        style={{
-                          padding: "0 8px",
-                          fontWeight: 600,
-                          fontSize: "0.9rem",
-                        }}
-                      >
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.cartId, item.quantity + 1)
-                        }
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--text-muted)",
-                          padding: "6px 10px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => removeFromCart(item.cartId)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "var(--text-dim)",
-                        cursor: "pointer",
-                        padding: "6px",
-                      }}
-                      title="Remove item"
-                    >
-                      <Trash2 size={16} color="#ef4444" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="flex items-center gap-2 text-xs text-orange-400 font-bold uppercase tracking-wider mb-1">
+            <ShoppingBag className="w-4 h-4" />
+            <span>Review Items & Pricing</span>
           </div>
-
-          <div className="glass-panel" style={{ padding: "1.75rem" }}>
-            <h3
-              style={{
-                fontSize: "1.25rem",
-                marginBottom: "1.5rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <MapPin size={20} color="var(--accent-orange)" />
-              Delivery Details
-            </h3>
-
-            <div className="grid-cols-2">
-              <div className="form-group">
-                <label className="form-label">Full Name</label>
-                <input
-                  type="text"
-                  name="fullName"
-                  value={address.fullName}
-                  onChange={handleInputChange}
-                  required
-                  className="form-input"
-                  placeholder="e.g. Rahul Sharma"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Contact Phone</label>
-                <input
-                  type="tel"
-                  name="phone"
-                  value={address.phone}
-                  onChange={handleInputChange}
-                  required
-                  className="form-input"
-                  placeholder="e.g. +91 98765 43210"
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Street Address & Landmark</label>
-              <input
-                type="text"
-                name="street"
-                value={address.street}
-                onChange={handleInputChange}
-                required
-                className="form-input"
-                placeholder="e.g. Flat 402, Sunshine Towers, MG Road"
-              />
-            </div>
-
-            <div className="grid-cols-3">
-              <div className="form-group">
-                <label className="form-label">City</label>
-                <input
-                  type="text"
-                  name="city"
-                  value={address.city}
-                  onChange={handleInputChange}
-                  required
-                  className="form-input"
-                  placeholder="e.g. Mumbai"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">State</label>
-                <input
-                  type="text"
-                  name="state"
-                  value={address.state}
-                  onChange={handleInputChange}
-                  required
-                  className="form-input"
-                  placeholder="e.g. Maharashtra"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">PIN Code</label>
-                <input
-                  type="text"
-                  name="zipCode"
-                  value={address.zipCode}
-                  onChange={handleInputChange}
-                  required
-                  className="form-input"
-                  placeholder="e.g. 400001"
-                />
-              </div>
-            </div>
-          </div>
+          <h1 className="text-3xl sm:text-4xl font-black text-white font-display">
+            Order Summary
+          </h1>
         </div>
 
-        <div
-          className="glass-panel"
-          style={{ padding: "2rem", position: "sticky", top: "100px" }}
-        >
-          <h3 style={{ fontSize: "1.25rem", marginBottom: "1.5rem" }}>
-            Payment Summary
-          </h3>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.9rem",
-              fontSize: "0.95rem",
-            }}
+        <div className="flex items-center gap-3">
+          <Link
+            to="/"
+            className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-white px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 transition-colors"
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "var(--text-muted)",
-              }}
-            >
-              <span>Subtotal:</span>
-              <span style={{ color: "var(--text-main)", fontWeight: 600 }}>
-                ₹{subtotal}
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "var(--text-muted)",
-              }}
-            >
-              <span>Express Kitchen Delivery:</span>
-              <span
-                style={{
-                  color: deliveryFee === 0 ? "#10b981" : "var(--text-main)",
-                  fontWeight: 600,
-                }}
-              >
-                {deliveryFee === 0 ? "FREE (Orders > ₹500)" : `₹${deliveryFee}`}
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "var(--text-muted)",
-              }}
-            >
-              <span>Taxes & GST:</span>
-              <span style={{ color: "var(--text-main)", fontWeight: 600 }}>
-                Included
-              </span>
-            </div>
-
-            <div
-              style={{
-                borderTop: "1px solid var(--border-glass)",
-                paddingTop: "1.2rem",
-                marginTop: "0.5rem",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-              }}
-            >
-              <span style={{ fontSize: "1.1rem", fontWeight: 700 }}>
-                Total Payable:
-              </span>
-              <span
-                style={{
-                  fontSize: "1.8rem",
-                  fontWeight: 800,
-                  color: "var(--accent-orange)",
-                  fontFamily: "var(--font-heading)",
-                }}
-              >
-                ₹{totalAmount}
-              </span>
-            </div>
-          </div>
-
+            <ChevronLeft className="w-4 h-4" />
+            <span>Add More Items</span>
+          </Link>
           <button
-            onClick={handleRazorpayPayment}
-            disabled={loading}
-            className="btn-primary"
-            style={{
-              width: "100%",
-              marginTop: "2rem",
-              padding: "0.9rem",
-              fontSize: "1.05rem",
-            }}
+            onClick={clearCart}
+            className="flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 transition-colors"
           >
-            {loading ? (
-              "Securing Payment Gateway..."
-            ) : (
-              <>
-                <CreditCard size={18} /> Pay ₹{totalAmount} with Razorpay
-              </>
-            )}
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear Cart</span>
           </button>
-
-          <div
-            style={{
-              marginTop: "1.5rem",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              color: "var(--text-dim)",
-              fontSize: "0.78rem",
-            }}
-          >
-            <ShieldCheck size={16} color="var(--accent-green)" />
-            <span>256-bit SSL Encrypted • Razorpay Test Mode Sandbox</span>
-          </div>
         </div>
       </div>
+
+      {/* Main Grid: 2 Columns (Left: Item List, Right: Bill Breakdown & Checkout) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        {/* Left Column: Cart Items (7 cols) */}
+        <div className="lg:col-span-7 space-y-4">
+          {cart.map((item) => (
+            <div
+              key={item.id}
+              className="p-5 rounded-3xl glass-panel border border-stone-800/80 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-stone-900 border border-stone-800 overflow-hidden shrink-0 flex items-center justify-center">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <Pizza className="w-8 h-8 text-orange-400" />
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-white font-display">{item.name}</h3>
+                    {item.type === 'custom' && (
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                        Custom Studio
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Custom Pizza Ingredients Details */}
+                  {item.type === 'custom' && item.customDetails && (
+                    <div className="mt-2 text-xs text-stone-400 space-y-1">
+                      <p>• <strong>Crust:</strong> {item.customDetails.base?.name || item.customDetails.base}</p>
+                      <p>• <strong>Sauce:</strong> {item.customDetails.sauce?.name || item.customDetails.sauce}</p>
+                      <p>• <strong>Cheese:</strong> {item.customDetails.cheese?.name || item.customDetails.cheese}</p>
+                      {item.customDetails.vegetables?.length > 0 && (
+                        <p>• <strong>Veggies:</strong> {item.customDetails.vegetables.map((v) => v.name || v).join(', ')}</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-sm font-bold text-orange-400">₹{item.price} each</span>
+                    <span className="text-xs text-stone-500">• Total: ₹{item.price * item.quantity}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quantity Counter & Delete Button */}
+              <div className="flex items-center justify-between sm:justify-end gap-3 pt-3 sm:pt-0 border-t sm:border-t-0 border-stone-800/60">
+                <div className="flex items-center gap-2 p-1 rounded-xl bg-stone-900 border border-stone-800">
+                  <button
+                    onClick={() => updateQuantity(item.id, -1)}
+                    className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center transition-colors"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-6 text-center font-bold text-sm text-white">{item.quantity}</span>
+                  <button
+                    onClick={() => updateQuantity(item.id, 1)}
+                    className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => removeFromCart(item.id)}
+                  className="p-2 text-stone-500 hover:text-rose-400 transition-colors"
+                  title="Remove Item"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {/* Delivery Note */}
+          <div className="p-4 rounded-2xl bg-stone-900/50 border border-stone-800 text-xs text-stone-400 flex items-center gap-3">
+            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>
+              Orders over <strong className="text-white">₹500</strong> automatically qualify for <strong>FREE thermal-express delivery</strong>!
+            </span>
+          </div>
+        </div>
+
+        {/* Right Column: Price Summary & Coupon (5 cols) */}
+        <div className="lg:col-span-5 space-y-6 sticky top-28">
+          
+          {/* Promo Code Box */}
+          <div className="glass-panel rounded-3xl p-6 border border-stone-800 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white font-display flex items-center gap-2">
+                <Tag className="w-4 h-4 text-orange-400" />
+                <span>Have a Promo Code?</span>
+              </h3>
+              <span className="text-[10px] text-orange-400 uppercase font-bold tracking-wider">
+                OASIS50 / SLICECRAFT20
+              </span>
+            </div>
+
+            {coupon ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Coupon <strong>{coupon}</strong> applied!</span>
+                </div>
+                <button
+                  onClick={handleRemoveCoupon}
+                  className="text-xs text-stone-400 hover:text-rose-400 font-semibold"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponInput}
+                  onChange={(e) => setCouponInput(e.target.value)}
+                  placeholder="Enter OASIS50 or SLICECRAFT20"
+                  className="flex-1 bg-stone-900 border border-stone-800 rounded-xl px-4 py-2.5 text-xs text-white uppercase placeholder-stone-500 focus:outline-none focus:border-orange-500"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-orange-400 font-bold text-xs uppercase tracking-wider shrink-0 transition-colors"
+                >
+                  Apply
+                </button>
+              </form>
+            )}
+
+            {couponError && (
+              <p className="text-xs text-rose-400">{couponError}</p>
+            )}
+          </div>
+
+          {/* Itemized Price Breakdown */}
+          <div className="glass-panel rounded-3xl p-6 border border-stone-800 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-white font-display pb-3 border-b border-stone-800">
+              Bill Breakdown
+            </h3>
+
+            <div className="space-y-2.5 text-xs text-stone-300">
+              <div className="flex justify-between">
+                <span className="text-stone-400">Cart Subtotal</span>
+                <span className="font-semibold text-white">₹{cartSubtotal}</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-stone-400">Delivery Fee</span>
+                <span>
+                  {deliveryFee === 0 ? (
+                    <strong className="text-emerald-400 font-semibold">FREE</strong>
+                  ) : (
+                    `₹${deliveryFee}`
+                  )}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-stone-400">GST (5%) & Packaging</span>
+                <span className="text-stone-300">₹{gstTax}</span>
+              </div>
+
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Coupon Discount</span>
+                  <span className="font-semibold">-₹{discountAmount}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-stone-800 flex items-center justify-between">
+              <div>
+                <span className="text-xs text-stone-400 block">Total Amount:</span>
+                <span className="text-3xl font-black text-white font-display">
+                  ₹{cartTotal}
+                </span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                Tax Included
+              </span>
+            </div>
+
+            {/* Proceed to Checkout CTA */}
+            {user?.role === 'admin' && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs text-center font-medium">
+                ⚠️ Admin observation mode: You cannot place orders.
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                if (user?.role === 'admin') {
+                  showToast('You are admin, you cannot order, only observe!', 'error');
+                  return;
+                }
+                navigate('/checkout');
+              }}
+              id="proceed-to-checkout-btn"
+              className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-extrabold text-sm shadow-xl transition-all ${
+                user?.role === 'admin'
+                  ? 'bg-neutral-800 text-amber-400 border border-amber-500/30 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:to-amber-600 text-stone-950 shadow-orange-600/30 hover:scale-[1.01]'
+              }`}
+            >
+              <span>{user?.role === 'admin' ? 'Admin Observation Only' : 'Proceed to Checkout'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <p className="text-[10px] text-center text-stone-500">
+              By proceeding, you agree to our terms of delivery & food safety.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+
     </div>
   );
-};
-
-export default OrderSummary;
+}

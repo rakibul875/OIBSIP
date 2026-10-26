@@ -1,86 +1,83 @@
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute';
+import NotificationToast from './components/NotificationToast';
 
-// Pages
-import Home from './pages/Home';
+// Customer Pages
+import UserDashboard from './pages/UserDashboard';
 import CustomPizzaBuilder from './pages/CustomPizzaBuilder';
 import OrderSummary from './pages/OrderSummary';
-import UserDashboard from './pages/UserDashboard';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import VerifyEmail from './pages/VerifyEmail';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
+import Checkout from './pages/Checkout';
+import OrderTracking from './pages/OrderTracking';
+
+// Auth Pages
+import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+import ForgotPassword from './pages/auth/ForgotPassword';
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin';
-import AdminDashboard from './pages/admin/AdminDashboard';
+import InventoryManagement from './pages/admin/InventoryManagement';
+import AdminOrderPanel from './pages/admin/AdminOrderPanel';
 
-function App() {
+// Scroll to top on route navigation
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: 'smooth'
+    });
+  }, [pathname]);
+
+  return null;
+}
+
+export default function App() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <div className="min-h-screen flex flex-col bg-stone-950 text-stone-100 selection:bg-orange-500 selection:text-white">
+      <ScrollToTop />
+      
+      {/* Global Navbar */}
       <Navbar />
-      <main style={{ flexGrow: 1 }}>
+
+      {/* Main Content Router */}
+      <main className="flex-1">
         <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<Home />} />
-          <Route path="/custom-builder" element={<CustomPizzaBuilder />} />
+          {/* Customer / User Routes */}
+          <Route path="/" element={<UserDashboard />} />
+          <Route path="/menu" element={<Navigate to="/" replace />} />
+          <Route path="/custom-pizza" element={<CustomPizzaBuilder />} />
+          <Route path="/cart" element={<Navigate to="/order-summary" replace />} />
+          <Route path="/order-summary" element={<OrderSummary />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/order-tracking" element={<OrderTracking />} />
+          <Route path="/track" element={<Navigate to="/order-tracking" replace />} />
+
+          {/* Authentication Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+
+          {/* Admin Routes */}
           <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin" element={<Navigate to="/admin/inventory" replace />} />
+          <Route path="/admin/inventory" element={<InventoryManagement />} />
+          <Route path="/admin/orders" element={<AdminOrderPanel />} />
 
-          {/* User Protected Routes */}
-          <Route
-            path="/order-summary"
-            element={
-              <ProtectedRoute>
-                <OrderSummary />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <UserDashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Admin Protected Routes */}
-          <Route
-            path="/admin/dashboard"
-            element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            }
-          />
-
-          {/* 404 Catch All */}
-          <Route
-            path="*"
-            element={
-              <div className="container" style={{ textAlign: 'center', padding: '6rem 1.5rem' }}>
-                <h1 style={{ fontSize: '3rem', color: 'var(--accent-orange)' }}>404</h1>
-                <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem', margin: '1rem 0 2rem 0' }}>
-                  Slice not found! The page you are looking for has been eaten.
-                </p>
-                <a href="/" className="btn-primary">Return to Menu</a>
-              </div>
-            }
-          />
+          {/* Fallback wildcard */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+
+      {/* Interactive Global Toast Alert */}
+      <NotificationToast />
+
+      {/* Global Footer */}
       <Footer />
     </div>
   );
 }
-
-export default App;
